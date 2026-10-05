@@ -5,10 +5,17 @@ import requests
 import json
 import websocket
 from flask import Flask, jsonify, render_template_string, request
-import yfinance as yf
 import orderflow_api
 import whale_tracker_api
 import market_structure
+
+# GITHUB FIX: Monkey-patch requests to always use a browser User-Agent
+original_get = requests.get
+def patched_get(url, **kwargs):
+    if 'headers' not in kwargs:
+        kwargs['headers'] = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+    return original_get(url, **kwargs)
+requests.get = patched_get
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
@@ -65,11 +72,20 @@ threading.Thread(target=liq_worker, daemon=True).start()
 
 def update_nuclear_liquidity(symbol):
     try:
-        df = yf.download(symbol, interval='1h', period='60d', progress=False)
-        if str(type(df.columns)).find('MultiIndex') != -1: 
-            df.columns = df.columns.get_level_values(0)
-        df.reset_index(inplace=True)
-        df.rename(columns={'Datetime':'time','Date':'time','Open':'open','High':'high','Low':'low','Close':'close','Volume':'volume'}, inplace=True)
+        binance_symbol = symbol.replace('-USD', 'USDT')
+        url = f"https://api.binance.com/api/v3/klines?symbol={binance_symbol}&interval=1h&limit=1000"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        
+        data = requests.get(url, headers=headers, timeout=5).json()
+        
+        import pandas as pd
+        df = pd.DataFrame(data, columns=['time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
+        df['close'] = df['close'].astype(float)
+        df['high'] = df['high'].astype(float)
+        df['low'] = df['low'].astype(float)
+        df['open'] = df['open'].astype(float)
+        df['volume'] = df['volume'].astype(float)
+        df['time'] = pd.to_datetime(df['time'], unit='ms')
         
         if df.empty: return
         
