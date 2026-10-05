@@ -4,6 +4,14 @@ import datetime
 import os
 from pymongo import MongoClient
 
+# GITHUB FIX: Monkey-patch requests for cloud bypass
+original_get = requests.get
+def patched_get(url, **kwargs):
+    if 'headers' not in kwargs:
+        kwargs['headers'] = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    return original_get(url, **kwargs)
+requests.get = patched_get
+
 # ==========================================
 # 🛑 PASTE YOUR MONGODB LINK BELOW 🛑
 # ==========================================
@@ -12,7 +20,7 @@ from pymongo import MongoClient
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://mdhabib97941_db_user:FoQH7HjGaLOIzwNY@cluster0.iiyn4rv.mongodb.net/?appName=Cluster0")
 
 print("=========================================")
-print("🧠 CLOUD AUTO-MEMORY SYSTEM (MONGODB) STARTED")
+print("QUANT CLOUD AUTO-MEMORY SYSTEM (MONGODB) STARTED")
 print("=========================================\n")
 
 # Connect to MongoDB
@@ -100,6 +108,13 @@ while True:
                 "message": f"Retail L/S dropped to {retail_ls:.4f}. Retail is heavily shorting.",
                 "severity": "MEDIUM"
             })
+            
+        # Add a constant Heartbeat log so we always save at least 1 row per check
+        logs_to_insert.append({
+            "timestamp": now_str, "price": curr_price, "event": "SYSTEM_HEARTBEAT",
+            "message": f"Quant AI Online. Whale L/S: {whale_ls:.2f} | Retail L/S: {retail_ls:.2f}",
+            "severity": "LOW"
+        })
 
         # 3. Push to MongoDB
         if logs_to_insert:
